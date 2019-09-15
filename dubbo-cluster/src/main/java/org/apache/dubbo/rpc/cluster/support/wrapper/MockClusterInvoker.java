@@ -38,9 +38,7 @@ import static org.apache.dubbo.rpc.Constants.MOCK_KEY;
 public class MockClusterInvoker<T> implements Invoker<T> {
 
     private static final Logger logger = LoggerFactory.getLogger(MockClusterInvoker.class);
-
     private final Directory<T> directory;
-
     private final Invoker<T> invoker;
 
     public MockClusterInvoker(Directory<T> directory, Invoker<T> invoker) {
@@ -70,50 +68,50 @@ public class MockClusterInvoker<T> implements Invoker<T> {
 
     @Override
     public Result invoke(Invocation invocation) throws RpcException {
-        Result result = null;
 
         String value = directory.getUrl().getMethodParameter(invocation.getMethodName(), MOCK_KEY, Boolean.FALSE.toString()).trim();
-        if (value.length() == 0 || "false".equalsIgnoreCase(value)) {
+        if (Boolean.FALSE.toString().equalsIgnoreCase(value)) {
             //no mock
-            result = this.invoker.invoke(invocation);
-        } else if (value.startsWith("force")) {
+            return this.invoker.invoke(invocation);
+        }
+
+        if (value.startsWith("force")) {
             if (logger.isWarnEnabled()) {
                 logger.warn("force-mock: " + invocation.getMethodName() + " force-mock enabled , url : " + directory.getUrl());
             }
             //force:direct mock
-            result = doMockInvoke(invocation, null);
-        } else {
-            //fail-mock
-            try {
-                result = this.invoker.invoke(invocation);
-
-                //fix:#4585
-                if(result.getException() != null && result.getException() instanceof RpcException){
-                    RpcException rpcException= (RpcException)result.getException();
-                    if(rpcException.isBiz()){
-                        throw  rpcException;
-                    }else {
-                        result = doMockInvoke(invocation, rpcException);
-                    }
-                }
-
-            } catch (RpcException e) {
-                if (e.isBiz()) {
-                    throw e;
-                }
-
-                if (logger.isWarnEnabled()) {
-                    logger.warn("fail-mock: " + invocation.getMethodName() + " fail-mock enabled , url : " + directory.getUrl(), e);
-                }
-                result = doMockInvoke(invocation, e);
-            }
+            return doMockInvoke(invocation, null);
         }
-        return result;
+
+        //fail-mock
+        try {
+            Result result = this.invoker.invoke(invocation);
+            //fix:#4585
+            if (!(result.getException() instanceof RpcException)) {
+                return result;
+            }
+
+            RpcException rpcException = (RpcException) result.getException();
+            if (!rpcException.isBiz()) {
+                return doMockInvoke(invocation, rpcException);
+            }
+
+            throw rpcException;
+
+        } catch (RpcException e) {
+            if (e.isBiz()) {
+                throw e;
+            }
+
+            if (logger.isWarnEnabled()) {
+                logger.warn("fail-mock: " + invocation.getMethodName() + " fail-mock enabled , url : " + directory.getUrl(), e);
+            }
+            return doMockInvoke(invocation, e);
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Result doMockInvoke(Invocation invocation, RpcException e) {
-        Result result = null;
         Invoker<T> minvoker;
 
         List<Invoker<T>> mockInvokers = selectMockInvoker(invocation);
@@ -123,17 +121,15 @@ public class MockClusterInvoker<T> implements Invoker<T> {
             minvoker = mockInvokers.get(0);
         }
         try {
-            result = minvoker.invoke(invocation);
+            return minvoker.invoke(invocation);
         } catch (RpcException me) {
             if (me.isBiz()) {
-                result = AsyncRpcResult.newDefaultAsyncResult(me.getCause(), invocation);
-            } else {
-                throw new RpcException(me.getCode(), getMockExceptionMessage(e, me), me.getCause());
+                return AsyncRpcResult.newDefaultAsyncResult(me.getCause(), invocation);
             }
+            throw new RpcException(me.getCode(), getMockExceptionMessage(e, me), me.getCause());
         } catch (Throwable me) {
             throw new RpcException(getMockExceptionMessage(e, me), me.getCause());
         }
-        return result;
     }
 
     private String getMockExceptionMessage(Throwable t, Throwable mt) {
@@ -158,7 +154,7 @@ public class MockClusterInvoker<T> implements Invoker<T> {
         //TODO generic invoker？
         if (invocation instanceof RpcInvocation) {
             //Note the implicit contract (although the description is added to the interface declaration, but extensibility is a problem. The practice placed in the attachment needs to be improved)
-            ((RpcInvocation) invocation).setAttachment(INVOCATION_NEED_MOCK, Boolean.TRUE.toString());
+            invocation.setAttachment(INVOCATION_NEED_MOCK, Boolean.TRUE.toString());
             //directory will return a list of normal invokers if Constants.INVOCATION_NEED_MOCK is present in invocation, otherwise, a list of mock invokers will return.
             try {
                 invokers = directory.list(invocation);

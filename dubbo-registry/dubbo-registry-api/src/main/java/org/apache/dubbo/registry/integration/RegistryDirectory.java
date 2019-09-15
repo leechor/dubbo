@@ -539,23 +539,24 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
             }
         }
 
-        if (deleted != null) {
-            for (String url : deleted) {
-                if (url != null) {
-                    Invoker<T> invoker = oldUrlInvokerMap.remove(url);
-                    if (invoker != null) {
-                        try {
-                            invoker.destroy();
-                            if (logger.isDebugEnabled()) {
-                                logger.debug("destroy invoker[" + invoker.getUrl() + "] success. ");
-                            }
-                        } catch (Exception e) {
-                            logger.warn("destroy invoker[" + invoker.getUrl() + "] failed. " + e.getMessage(), e);
-                        }
-                    }
-                }
-            }
+        if (deleted == null) {
+            return;
         }
+
+        deleted.stream()
+                .filter(StringUtils::isNotEmpty)
+                .map(oldUrlInvokerMap::remove)
+                .filter(Objects::nonNull)
+                .forEach(invoker -> {
+                    try {
+                        invoker.destroy();
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("destroy invoker[" + invoker.getUrl() + "] success. ");
+                        }
+                    } catch (Exception e) {
+                        logger.warn("destroy invoker[" + invoker.getUrl() + "] failed. " + e.getMessage(), e);
+                    }
+                });
     }
 
     @Override
